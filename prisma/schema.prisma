@@ -1,0 +1,226 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- MODELOS DE LA BASE DE DATOS ---
+
+// 1. Definimos los roles posibles en el sistema
+enum Role {
+  ADMIN
+  RESIDENTE
+  SEGURIDAD
+}
+
+// 2. TABLA MAESTRA DE USUARIOS (Maneja a los 3 roles)
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("RESIDENTE")
+  depto     String?  // Ej. "Dpto 402" (Null para Admin/Seguridad)
+  phone     String?  // Ej. "+51 999 888 777"
+  status    String   @default("PENDIENTE") // PENDIENTE, ACTIVO, INACTIVO
+  
+  // Relaciones (Un residente puede tener muchas visitas y tickets)
+  visitas   Visitor[]
+  tickets   Ticket[]
+  reservations Reservation[]
+  parcels      Parcel[]
+  vehicles     Vehicle[]
+  pets         Pet[]
+  family       FamilyMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// TABLAS PARA EL ROL: ADMINISTRADOR
+// ==========================================
+
+model Announcement {
+  id        Int      @id @default(autoincrement())
+  title     String
+  desc      String
+  scope     String   // Ej. "Todos", "Torre A"
+  type      String   // "info", "warning"
+  createdAt DateTime @default(now())
+}
+
+model Area {
+  id        Int      @id @default(autoincrement())
+  name      String
+  capacity  String   // Ej. "15 personas"
+  status    String   // "Activa", "Mantenimiento"
+  color     String   // "success", "warning"
+  icon      String   // Ej. "bi-fire"
+  
+  reservations Reservation[]
+}
+
+// ==========================================
+// TABLAS COMPARTIDAS (RESIDENTE / ADMIN)
+// ==========================================
+
+model Ticket {
+  id         Int      @id @default(autoincrement())
+  title      String
+  desc       String
+  priority   String   // "Alta", "Media", "Baja"
+  status     String   @default("Pendiente")
+  assignedTo String?
+  notes      String?
+  
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id])
+  
+  createdAt DateTime @default(now())
+}
+
+// ==========================================
+// TABLAS PARA EL ROL: SEGURIDAD Y RESIDENTE
+// ==========================================
+
+model Visitor {
+  id        Int      @id @default(autoincrement())
+  name      String
+  dni       String?
+  type      String   // "Familiar", "Proveedor", "Delivery"
+  pin       String?  // PIN de acceso temporal
+  status    String   @default("Pendiente") // "Pendiente", "Ingresó", "Salió"
+  
+  // A qué residente va a visitar
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  
+  fechaVisita DateTime
+  createdAt   DateTime @default(now())
+}
+
+model LogEntry { // Bitácora de Seguridad
+  id        Int      @id @default(autoincrement())
+  title     String
+  desc      String
+  type      String   // "Rutina", "Incidente", "Emergencia"
+  shift     String   // "Día", "Noche"
+  createdAt DateTime @default(now())
+}
+
+// ==========================================
+// NUEVOS MÓDULOS AVANZADOS
+// ==========================================
+
+model Reservation {
+  id        Int      @id @default(autoincrement())
+  date      DateTime // Día de la reserva
+  timeStart String   // Ej. "14:00"
+  timeEnd   String   // Ej. "18:00"
+  status    String   @default("Pendiente") // Pendiente, Aprobada, Cancelada
+  
+  // Relaciones
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  areaId    Int
+  area      Area     @relation(fields: [areaId], references: [id])
+  
+  createdAt DateTime @default(now())
+}
+
+model Parcel {
+  id          Int      @id @default(autoincrement())
+  courier     String   // Ej. "Amazon", "DHL", "Rappi"
+  details     String?  // Ej. "Caja mediana"
+  status      String   @default("En Recepción") // En Recepción, Entregado
+  
+  // Para quién es el paquete
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id])
+  
+  receivedAt  DateTime @default(now())
+  pickedUpAt  DateTime? // Cuándo bajó el residente a recogerlo
+}
+
+model Vehicle {
+  id        Int      @id @default(autoincrement())
+  plate     String   @unique
+  brand     String   // Ej. "Toyota Yaris"
+  color     String
+  parking   String?  // Ej. "Estacionamiento #45"
+  
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Pet {
+  id        Int      @id @default(autoincrement())
+  name      String
+  type      String   // "Perro", "Gato"
+  breed     String?  // "Golden Retriever"
+  
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model FamilyMember {
+  id        Int      @id @default(autoincrement())
+  name      String
+  relation  String   // Ej. "Hijo", "Esposa"
+  phone     String?
+  
+  // A qué titular/departamento pertenecen
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+// ==========================================
+// MÓDULO DE ASAMBLEAS Y VOTACIONES
+// ==========================================
+
+model Poll {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  options     String   // JSON array: ["Sí, a favor", "No, en contra"]
+  status      String   @default("Activa") // "Activa", "Cerrada"
+  closesAt    DateTime // Fecha límite para votar
+  votes       Vote[]
+  createdAt   DateTime @default(now())
+}
+
+model Vote {
+  id        Int      @id @default(autoincrement())
+  option    String   // La opción elegida
+  userId    Int
+  pollId    Int
+  poll      Poll     @relation(fields: [pollId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, pollId]) // Un usuario solo puede votar una vez por encuesta
+}
+
+// ==========================================
+// MÓDULO DE NOTIFICACIONES INTERNAS
+// ==========================================
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  type        String   // "parking_request", "parking_response", "general"
+  title       String
+  message     String
+  status      String   @default("Pendiente") // "Pendiente", "Aprobada", "Rechazada", "Leída"
+  fromUserId  Int      // Quién envía
+  toUserId    Int      // Quién recibe
+  metadata    String?  // JSON con datos extra (placa, horario, etc.)
+  createdAt   DateTime @default(now())
+}
